@@ -64,87 +64,87 @@ jobs:
           Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
  
     # -----------------------------------------------------------
-# 1. Install NDCe Stack Components
-# -----------------------------------------------------------
-     - name: Install XFS Simulator
-       shell: pwsh
-       run: |
+    # 1. Install NDCe Stack Components
+    # -----------------------------------------------------------
+      - name: Install XFS Simulator
+        shell: pwsh
+        run: |
          Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
 
-    $nupkgFile = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
-    $downloadPath = "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile"
-    $extractPath  = "$env:RUNNER_TEMP\ndce-install\XFS Simulator"
-    $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkgFile"
+         $nupkgFile = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
+         $downloadPath = "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile"
+         $extractPath  = "$env:RUNNER_TEMP\ndce-install\XFS Simulator"
+         $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkgFile"
 
-    New-Item -ItemType Directory -Force -Path (Split-Path $downloadPath) | Out-Null
+         New-Item -ItemType Directory -Force -Path (Split-Path $downloadPath) | Out-Null
 
-    curl.exe --fail -L `
-      -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" `
-      -o $downloadPath `
-      $url
+         curl.exe --fail -L `
+           -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" `
+           -o $downloadPath `
+           $url
 
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "ERROR: Download failed with exit code $LASTEXITCODE"
-      exit 1
-    }
+         if ($LASTEXITCODE -ne 0) {
+           Write-Host "ERROR: Download failed with exit code $LASTEXITCODE"
+           exit 1
+         }
 
-    Write-Host "Downloaded package path:"
-    Write-Host $downloadPath
+         Write-Host "Downloaded package path:"
+         Write-Host $downloadPath
 
-    $fileSize = (Get-Item $downloadPath).Length
-    Write-Host "Downloaded file size: $fileSize bytes"
+         $fileSize = (Get-Item $downloadPath).Length
+         Write-Host "Downloaded file size: $fileSize bytes"
 
-    if ($fileSize -lt 1024) {
-      Write-Host "ERROR: Downloaded file is too small"
-      exit 1
-    }
+         if ($fileSize -lt 1024) {
+           Write-Host "ERROR: Downloaded file is too small"
+           exit 1
+         }
 
-    Write-Host "=== Extracting XFS Simulator nupkg ==="
-    New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
-    Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
+         Write-Host "=== Extracting XFS Simulator nupkg ==="
+         New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+         Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
 
-    Write-Host "Top-level extracted contents:"
-    Get-ChildItem $extractPath |
-      Select-Object Name, Length, LastWriteTime |
-      Format-Table -AutoSize
+         Write-Host "Top-level extracted contents:"
+         Get-ChildItem $extractPath |
+           Select-Object Name, Length, LastWriteTime |
+           Format-Table -AutoSize
 
-    Write-Host "Locating setup.exe:"
-    $setupExe = Join-Path $extractPath "setup.exe"
-    Write-Host "setup.exe path : $setupExe"
-    Write-Host "Exists        : $(Test-Path $setupExe)"
+         Write-Host "Locating setup.exe:"
+         $setupExe = Join-Path $extractPath "setup.exe"
+         Write-Host "setup.exe path : $setupExe"
+         Write-Host "Exists        : $(Test-Path $setupExe)"
 
-    Write-Host "=== Installing XFS Simulator (setup.exe /t:devsim /u:silent) ==="
-    $proc = Start-Process `
-      -FilePath $setupExe `
-      -ArgumentList "/t:devsim /u:silent" `
-      -Wait `
-      -PassThru
+         Write-Host "=== Installing XFS Simulator (setup.exe /t:devsim /u:silent) ==="
+         $proc = Start-Process `
+           -FilePath $setupExe `
+           -ArgumentList "/t:devsim /u:silent" `
+           -Wait `
+           -PassThru
 
-    $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
-    if ($proc.ExitCode -notin $validCodes) {
-      Write-Host "ERROR: XFS Simulator install failed with exit code $($proc.ExitCode)"
-      exit 1
-    }
+         $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
+         if ($proc.ExitCode -notin $validCodes) {
+           Write-Host "ERROR: XFS Simulator install failed with exit code $($proc.ExitCode)"
+           exit 1
+         }
 
-    Write-Host "XFS Simulator installed successfully (exit code: $($proc.ExitCode))"
+         Write-Host "XFS Simulator installed successfully (exit code: $($proc.ExitCode))"
 
-    Write-Host "=== Locating installed XFS Simulator executable (SIMSTART.exe) ==="
-    $simStart = Get-ChildItem `
-      -Path "C:\" `
-      -Filter "SIMSTART.exe" `
-      -Recurse `
-      -ErrorAction SilentlyContinue |
-      Select-Object -First 1
+         Write-Host "=== Locating installed XFS Simulator executable (SIMSTART.exe) ==="
+         $simStart = Get-ChildItem `
+           -Path "C:\" `
+           -Filter "SIMSTART.exe" `
+           -Recurse `
+           -ErrorAction SilentlyContinue |
+           Select-Object -First 1
 
-    if (-not $simStart) {
-      Write-Host "ERROR: SIMSTART.exe not found after installation"
-      exit 1
-    }
+         if (-not $simStart) {
+           Write-Host "ERROR: SIMSTART.exe not found after installation"
+           exit 1
+         }
 
-    Write-Host "SIMSTART.exe found:"
-    Write-Host "Path : $($simStart.FullName)"
-    Write-Host "Size : $([Math]::Round($simStart.Length / 1KB, 2)) KB"
+         Write-Host "SIMSTART.exe found:"
+         Write-Host "Path : $($simStart.FullName)"
+         Write-Host "Size : $([Math]::Round($simStart.Length / 1KB, 2)) KB"
 
-    $ver = (Get-Item $simStart.FullName).VersionInfo
-    Write-Host "File version : $($ver.FileVersion)"
-    Write-Host "Product ver. : $($ver.ProductVersion)"
+         $ver = (Get-Item $simStart.FullName).VersionInfo
+         Write-Host "File version : $($ver.FileVersion)"
+         Write-Host "Product ver. : $($ver.ProductVersion)"
