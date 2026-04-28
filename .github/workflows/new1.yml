@@ -29,11 +29,7 @@ jobs:
     steps:
       - name: Checkout ndce-automation-tests
         uses: actions/checkout@v4
-        with:
-          repository: ncratleos-swt-banking/ndce-automation-tests
-          ref: master
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
- 
+      
       - name: Print deployment configuration
         shell: pwsh
         run: |
