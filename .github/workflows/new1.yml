@@ -63,12 +63,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
           Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
  
-      # -----------------------------------------------------------
-      # 1. Install NDCe Stack Components
-      # ------------------------------------------------------------ name: Install XFS Simulator
-  shell: pwsh
-  run: |
-    Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
+    # -----------------------------------------------------------
+# 1. Install NDCe Stack Components
+# -----------------------------------------------------------
+     - name: Install XFS Simulator
+       shell: pwsh
+       run: |
+         Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
 
     $nupkgFile = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
     $downloadPath = "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile"
@@ -147,4 +148,3 @@ jobs:
     $ver = (Get-Item $simStart.FullName).VersionInfo
     Write-Host "File version : $($ver.FileVersion)"
     Write-Host "Product ver. : $($ver.ProductVersion)"
-
