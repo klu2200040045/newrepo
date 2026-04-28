@@ -78,9 +78,9 @@ jobs:
 
          New-Item -ItemType Directory -Force -Path (Split-Path $downloadPath) | Out-Null
 
-         curl.exe --fail -L `
-           -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" `
-           -o $downloadPath `
+         curl.exe --fail -L 
+           -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" 
+           -o $downloadPath 
            $url
 
          if ($LASTEXITCODE -ne 0) {
@@ -114,10 +114,10 @@ jobs:
          Write-Host "Exists        : $(Test-Path $setupExe)"
 
          Write-Host "=== Installing XFS Simulator (setup.exe /t:devsim /u:silent) ==="
-         $proc = Start-Process `
-           -FilePath $setupExe `
-           -ArgumentList "/t:devsim /u:silent" `
-           -Wait `
+         $proc = Start-Process 
+           -FilePath $setupExe 
+           -ArgumentList "/t:devsim /u:silent" 
+           -Wait 
            -PassThru
 
          $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
@@ -129,10 +129,10 @@ jobs:
          Write-Host "XFS Simulator installed successfully (exit code: $($proc.ExitCode))"
 
          Write-Host "=== Locating installed XFS Simulator executable (SIMSTART.exe) ==="
-         $simStart = Get-ChildItem `
-           -Path "C:\" `
-           -Filter "SIMSTART.exe" `
-           -Recurse `
+         $simStart = Get-ChildItem 
+           -Path "C:\" 
+           -Filter "SIMSTART.exe" 
+           -Recurse 
            -ErrorAction SilentlyContinue |
            Select-Object -First 1
 
