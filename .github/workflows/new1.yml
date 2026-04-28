@@ -206,10 +206,11 @@ jobs:
             
                 # ---- Locate installed executable (proof of install) ----
                 Write-Host "=== Locating installed Advance NDC executable ==="
-                $andcExe = Get-ChildItem 
-                  -Path "C:\" 
-                   -Filter "*.exe" 
-                   -Recurse 
+                $andcExe = Get-ChildItem `     
+                  -Path "C:\" `
+                  -Filter "*.exe" `
+                   -Recurse `
+
                    -ErrorAction SilentlyContinue |
                    Where-Object { $_.Name -match "andc|ndc|advance" } |
                    Select-Object -First 1
