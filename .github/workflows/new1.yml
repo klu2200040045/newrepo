@@ -61,7 +61,6 @@ jobs:
  
     
 
-
       - name: Install APTRA Advance NDC - Download and Extract
         shell: pwsh
         run: |
@@ -85,29 +84,19 @@ jobs:
           Write-Host "Extract path: $extractPath"
  
       - name: Install APTRA Advance NDC - Run Installer
-        shell: pwsh
+        shell: cmd
         run: |
-          $extractPath = "$env:RUNNER_TEMP\ndce-install\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
-          Write-Host "=== Installing Advance NDC silently ==="
-          Write-Host "Extract path: $extractPath"
-          Write-Host "Start time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-          $setupExe = Join-Path $extractPath "setup.exe"
-          if (-not (Test-Path $setupExe)) {
-            Write-Host "ERROR: setup.exe not found at $setupExe"; exit 1
-          }
-          # Run setup.exe directly via call operator (synchronous, no Start-Process)
-          & $setupExe /t:sst /u:silent
-          $exitCode = $LASTEXITCODE
-          Write-Host "End time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-          Write-Host "Exit code: $exitCode"
-          $validCodes = @(0, 1073741825, 1073741826, 1073741830, 3010, 1641)
-          if ($exitCode -notin $validCodes) {
-            Write-Host "ERROR: Advance NDC install failed with exit code $exitCode"
-            # Dump MSI logs for debugging
-            Get-ChildItem -Path $env:TEMP -Filter "MSI*.LOG" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 3 | ForEach-Object {
-              Write-Host "=== MSI Log: $($_.Name) (last 100 lines) ==="
-              Get-Content $_.FullName -Tail 100
-            }
-            exit 1
-          }
-          Write-Host "Advance NDC installed successfully"
+          echo === Installing Advance NDC (setup.exe /t:sst /u:silent) ===
+          echo Start time: %DATE% %TIME%
+          "%RUNNER_TEMP%\ndce-install\Advance NDC %APTRA_ADVANCE_NDC_VERSION%\setup.exe" /t:sst /u:silent
+          echo Exit code: %ERRORLEVEL%
+          echo End time: %DATE% %TIME%
+          if %ERRORLEVEL% NEQ 0 (
+            if %ERRORLEVEL% NEQ 3010 (
+              if %ERRORLEVEL% NEQ 1641 (
+                echo ERROR: Advance NDC install failed with exit code %ERRORLEVEL%
+                exit /b 1
+              )
+            )
+          )
+          echo Advance NDC installed successfully
