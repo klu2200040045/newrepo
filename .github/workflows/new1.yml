@@ -87,18 +87,97 @@ jobs:
       - name: Install APTRA Advance NDC - Run Installer
         shell: cmd
         run: |
-          echo === Installing Advance NDC (setup.exe /t:sst /u:silent) ===
-          echo Start time: %DATE% %TIME%
-          "%RUNNER_TEMP%\ndce-install\Advance NDC %APTRA_ADVANCE_NDC_VERSION%\setup.exe" /t:sst /u:silent
-          echo Exit code: %ERRORLEVEL%
-          echo End time: %DATE% %TIME%
-          if %ERRORLEVEL% NEQ 0 (
-            if %ERRORLEVEL% NEQ 3010 (
-              if %ERRORLEVEL% NEQ 1641 (
-                echo ERROR: Advance NDC install failed with exit code %ERRORLEVEL%
-                exit /b 1
+
+            echo === Installing Advance NDC (setup.exe /t:sst /u:silent) ===
+            echo Start time: %DATE% %TIME%
+            "%RUNNER_TEMP%\ndce-install\Advance NDC %APTRA_ADVANCE_NDC_VERSION%\setup.exe" /t:sst /u:silent
+            echo Exit code: %ERRORLEVEL%
+            echo End time: %DATE% %TIME%
+            if %ERRORLEVEL% NEQ 0 (
+              if %ERRORLEVEL% NEQ 3010 (
+                if %ERRORLEVEL% NEQ 1641 (
+                  echo ERROR: Advance NDC install failed with exit code %ERRORLEVEL%
+                  exit /b 1
+                )
               )
             )
-          )
-          echo Advance NDC installed successfully
- 
+            echo Advance NDC installed successfully
+             
+          
+            Write-Host "=== Downloading APTRA Advance NDC $env:APTRA_ADVANCE_NDC_VERSION ==="
+                        
+            $nupkgFile   = "AdvanceNDC.$env:APTRA_ADVANCE_NDC_VERSION.nupkg"
+            $downloadDir = "$env:RUNNER_TEMP\ndce-install\Packages"
+            $downloadPath = Join-Path $downloadDir $nupkgFile
+            $extractPath = "$env:RUNNER_TEMP\ndce-install\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
+            $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkgFile"
+                        
+            New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+                        
+            # ---- Download ----
+            curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $downloadPath $url
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Download failed"
+              exit 1}
+            
+                        
+            Write-Host "Downloaded package path:"
+            Write-Host $downloadPath
+                        
+            $fileSize = (Get-Item $downloadPath).Length
+            Write-Host "Downloaded file size: $fileSize bytes"
+            if ($fileSize -lt 1024) {
+              Write-Host "ERROR: Downloaded file is too small"
+              exit 1 }
+            
+                        
+            # ---- Extract ----
+            Write-Host "=== Extracting Advance NDC ==="
+            New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+            Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
+                        
+            Write-Host "Top-level extracted contents:"
+            Get-ChildItem $extractPath |
+              Select-Object Name, Length, LastWriteTime |
+              Format-Table -AutoSize
+                        
+              # ---- Locate setup.exe ----
+              $setupExe = Join-Path $extractPath "setup.exe"
+              Write-Host "setup.exe path : $setupExe"
+              Write-Host "Exists        : $(Test-Path $setupExe)"
+         
+              if (-not (Test-Path $setupExe)) {
+                Write-Host "ERROR: setup.exe not found"
+                exit 1}
+         
+              # ---- Install ----
+              Write-Host "=== Installing Advance NDC (setup.exe /t:sst /u:silent) ===" & $setupExe /t:sst /u:silent
+              $exitCode = $LASTEXITCODE
+         
+              Write-Host "Installer exit code: $exitCode"
+         
+              $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
+              if ($exitCode -notin $validCodes) {
+                Write-Host "ERROR: Advance NDC install failed with exit code $exitCode"
+                exit 1}
+         
+              Write-Host "Advance NDC installed successfully"
+                        
+              # ---- Locate installed executable (proof of install) ----
+              Write-Host "=== Locating installed Advance NDC executable ==="
+              $andcExe = Get-ChildItem `     
+                -Path "C:\" `
+                -Filter "*.exe" `
+                 -Recurse `
+                 -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -match "andc|ndc|advance" } |
+                 Select-Object -First 1
+               if (-not $andcExe) {
+                 Write-Host "ERROR: No Advance NDC executable found after installation"
+                 exit 1}
+               Write-Host "Advance NDC executable found:"
+               Write-Host "Path : $($andcExe.FullName)"
+               Write-Host "Size : $([Math]::Round($andcExe.Length / 1KB, 2)) KB"
+               $ver = (Get-Item $andcExe.FullName).VersionInfo
+               Write-Host "File version : $($ver.FileVersion)"
+               Write-Host "Product ver. : $($ver.ProductVer
