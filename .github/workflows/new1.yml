@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Print deployment configuration
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "========================================="
           Write-Host "  NDCe Stack Deployment Configuration"
@@ -50,7 +50,7 @@ jobs:
       # 0. Install Prerequisites (Chocolatey, 7zip, NuGet, VC++)
       # -----------------------------------------------------------
       - name: Install prerequisites
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "=== Installing prerequisites ==="
           choco install 7zip -y --no-progress
@@ -60,7 +60,7 @@ jobs:
     
 
       - name: Install APTRA Advance NDC - Download and Extract
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "=== Downloading APTRA Advance NDC $env:APTRA_ADVANCE_NDC_VERSION ==="
           $nupkgFile = "AdvanceNDC.$env:APTRA_ADVANCE_NDC_VERSION.nupkg"
