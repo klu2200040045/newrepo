@@ -1,7 +1,9 @@
 name: NDCe Windows Automation Setup
  
 on:
-  push : [ main]
+  push:
+    branches: [ main ]
+  pull_request:
   workflow_dispatch:
  
 env:
