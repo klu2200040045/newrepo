@@ -1,7 +1,9 @@
 name: NDCe Windows Automation Setup
  
 on:
-  
+  push:
+    branches: [ main ]
+  pull_request:
   workflow_dispatch:
  
 env:
@@ -22,14 +24,14 @@ jobs:
     name: NDCe Stack Deploy & Run Automation Tests
     # Use self-hosted runner for ATM stack installation (requires interactive desktop session)
     # Change to 'windows-latest' for GitHub-hosted runner (not recommended for APTRA installs)
-    runs-on: [self-hosted, windows ]
+    runs-on: windows-latest
  
     steps:
       - name: Checkout ndce-automation-tests
         uses: actions/checkout@v4
       
       - name: Print deployment configuration
-        shell: powershell
+        shell: pwsh
         run: |
           Write-Host "========================================="
           Write-Host "  NDCe Stack Deployment Configuration"
@@ -50,7 +52,7 @@ jobs:
       # 0. Install Prerequisites (Chocolatey, 7zip, NuGet, VC++)
       # -----------------------------------------------------------
       - name: Install prerequisites
-        shell: powershell
+        shell: pwsh
         run: |
           Write-Host "=== Installing prerequisites ==="
           choco install 7zip -y --no-progress
@@ -60,7 +62,7 @@ jobs:
     
 
       - name: Install APTRA Advance NDC - Download and Extract
-        shell: powershell
+        shell: pwsh
         run: |
           Write-Host "=== Downloading APTRA Advance NDC $env:APTRA_ADVANCE_NDC_VERSION ==="
           $nupkgFile = "AdvanceNDC.$env:APTRA_ADVANCE_NDC_VERSION.nupkg"
