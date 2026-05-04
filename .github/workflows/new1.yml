@@ -55,7 +55,7 @@ jobs:
       - name: Install prerequisites
         shell: pwsh
         run: |
-           Write- Host "===Installing prrequisities ==="
+           Write-Host "===Installing prrequisities ==="
            choco install 7zip -y --no-progress
            New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
            Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
