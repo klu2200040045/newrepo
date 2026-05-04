@@ -1,103 +1,159 @@
-name: NDCe Windows Automation Setup
- 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-  workflow_dispatch:
- 
-env:
-  XFS_SIMULATOR_VERSION: '4.7.0'
-  APTRA_ADVANCE_NDC_VERSION: '5.2.0'
-  APTRA_ADVANCE_NDC_PATCH_BRANCH: ''
-  EMV_VERSION: '5.0.0'
-  NDC_ENTERPRISE_VERSION: 'andc52x-2.10.0-M01'
-  AUTOMATION_BASE_TARF_VERSION: '1.1.6'
-  CONNECTIONS_SERVER_URL: 'http://153.81.244.117:8092/connections'
-  PROJECT_TYPE: 'Reference'
-  AUTOMATION_NDC_ENTERPRISE_VERSION: '01.09.00Pre'
-  TEST_SUITE: 'BuilderTestSuite/Functional/ClientEditorPortal/clientEditorandPortal.robot'
-  BROWSER: 'chromium'
- 
-jobs:
-  setup-and-test:
-    name: NDCe Stack Deploy & Run Automation Tests
-    # Use self-hosted runner for ATM stack installation (requires interactive desktop session)
-    # Change to 'windows-latest' for GitHub-hosted runner (not recommended for APTRA installs)
-    runs-on: windows-latest
- 
-    steps:
-      - name: Checkout ndce-automation-tests
-        uses: actions/checkout@v4
-      
-      - name: Print deployment configuration
-        shell: pwsh
-        run: |
-          Write-Host "========================================="
-          Write-Host "  NDCe Stack Deployment Configuration"
-          Write-Host "========================================="
-          Write-Host "Runner OS              : $env:OS - $((Get-CimInstance Win32_OperatingSystem).Caption)"
-          Write-Host "XFS Simulator          : $env:XFS_SIMULATOR_VERSION"
-          Write-Host "APTRA Advance NDC      : $env:APTRA_ADVANCE_NDC_VERSION"
-          Write-Host "APTRA NDC Patch Branch : $env:APTRA_ADVANCE_NDC_PATCH_BRANCH"
-          Write-Host "EMV Version            : $env:EMV_VERSION"
-          Write-Host "NDC Enterprise         : $env:NDC_ENTERPRISE_VERSION"
-          Write-Host "Automation Base TARF   : $env:AUTOMATION_BASE_TARF_VERSION"
-          Write-Host "Connections Server URL  : $env:CONNECTIONS_SERVER_URL"
-          Write-Host "Project Type           : $env:PROJECT_TYPE"
-          Write-Host "Automation NDCe Version: $env:AUTOMATION_NDC_ENTERPRISE_VERSION"
-          Write-Host "========================================="
- 
-      # -----------------------------------------------------------
-      # 0. Install Prerequisites (Chocolatey, 7zip, NuGet, VC++)
-      # -----------------------------------------------------------
-      - name: Install prerequisites
-        shell: pwsh
-        run: |
-          Write-Host "=== Installing prerequisites ==="
-          choco install 7zip -y --no-progress
-          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
-          Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
- 
-    
+name: NDCe Stack Installation (GitHub Hosted)
 
-      - name: Install APTRA Advance NDC - Download and Extract
+on:
+  workflow_dispatch:
+    inputs:
+      xfs_simulator_version:
+        required: true
+        default: '4.7.0'
+      aptra_advance_ndc_version:
+        required: true
+        default: '5.2.0'
+      emv_version:
+        required: true
+        default: '5.0.0'
+      ndc_enterprise_version:
+        required: true
+        default: 'andc52x-2.10.0-M01'
+      automation_base_tarf_version:
+        required: true
+        default: '1.1.6'
+      automation_ndc_enterprise_version:
+        required: true
+        default: '01.09.00Pre'
+
+env:
+  INSTALL_ROOT: ${{ runner.temp }}\ndce-install
+  PACKAGE_DIR: ${{ runner.temp }}\ndce-install\Packages
+  VALID_EXIT_CODES: '0,1073741825,1073741826,1073741830,3010,1641'
+
+jobs:
+  stack-install:
+    runs-on: windows-latest
+
+    steps:
+      - name: Initialize directories
         shell: pwsh
         run: |
-          Write-Host "=== Downloading APTRA Advance NDC $env:APTRA_ADVANCE_NDC_VERSION ==="
-          $nupkgFile = "AdvanceNDC.$env:APTRA_ADVANCE_NDC_VERSION.nupkg"
-          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkgFile"
-          curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile" $url
-          if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Download failed"; exit 1 }
-          $fileSize = (Get-Item "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile").Length
-          Write-Host "Downloaded file size: $fileSize bytes"
-          if ($fileSize -lt 1024) {
-            Write-Host "ERROR: File too small ($fileSize bytes):"; Get-Content "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile"; exit 1
-          }
-          Write-Host "=== Extracting Advance NDC ==="
-          $extractPath = "$env:RUNNER_TEMP\ndce-install\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
-          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
-          Expand-Archive -Path "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile" -DestinationPath $extractPath -Force
-          Write-Host "=== Extracted contents ==="
-          Get-ChildItem -Path $extractPath -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
-          Write-Host "Setup.exe exists: $(Test-Path "$extractPath\setup.exe")"
-          Write-Host "Extract path: $extractPath"
- 
-      - name: Install APTRA Advance NDC - Run Installer
-        shell: cmd
+          New-Item -ItemType Directory -Force -Path $env:INSTALL_ROOT | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
+          Write-Host "Install root: $env:INSTALL_ROOT"
+
+      # ------------------------------------------------------------
+      # XFS Simulator
+      # ------------------------------------------------------------
+      - name: Install XFS Simulator
+        shell: pwsh
         run: |
-          echo === Installing Advance NDC (setup.exe /t:sst /u:silent) ===
-          echo Start time: %DATE% %TIME%
-          "%RUNNER_TEMP%\ndce-install\Advance NDC %APTRA_ADVANCE_NDC_VERSION%\setup.exe" /t:sst /u:silent
-          echo Exit code: %ERRORLEVEL%
-          echo End time: %DATE% %TIME%
-          if %ERRORLEVEL% NEQ 0 (
-            if %ERRORLEVEL% NEQ 3010 (
-              if %ERRORLEVEL% NEQ 1641 (
-                echo ERROR: Advance NDC install failed with exit code %ERRORLEVEL%
-                exit /b 1
-              )
-            )
-          )
-          echo Advance NDC installed successfully
-          
+          $ver = "${{ inputs.xfs_simulator_version }}"
+          $pkg = "XFSSimulator.$ver.nupkg"
+          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$pkg"
+          $dest = "$env:PACKAGE_DIR\$pkg"
+
+          curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
+          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+
+          $extract = "$env:INSTALL_ROOT\XFS Simulator"
+          Expand-Archive $dest $extract -Force
+
+          $proc = Start-Process "$extract\setup.exe" "/t:devsim /u:silent" -Wait -PassThru
+          if ($env:VALID_EXIT_CODES.Split(',') -notcontains $proc.ExitCode) { exit 1 }
+
+      # ------------------------------------------------------------
+      # Advance NDC
+      # ------------------------------------------------------------
+      - name: Install APTRA Advance NDC
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.aptra_advance_ndc_version }}"
+          $pkg = "AdvanceNDC.$ver.nupkg"
+          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$pkg"
+          $dest = "$env:PACKAGE_DIR\$pkg"
+
+          curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
+          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+
+          $extract = "$env:INSTALL_ROOT\Advance NDC $ver"
+          Expand-Archive $dest $extract -Force
+
+          $proc = Start-Process "$extract\setup.exe" "/t:sst /u:silent" -Wait -PassThru
+          if ($env:VALID_EXIT_CODES.Split(',') -notcontains $proc.ExitCode) { exit 1 }
+
+      # ------------------------------------------------------------
+      # EMV
+      # ------------------------------------------------------------
+      - name: Install EMV
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.emv_version }}"
+          $pkg = "EMVAdvanceNDC.$ver.nupkg"
+          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$pkg"
+          $dest = "$env:PACKAGE_DIR\$pkg"
+
+          curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
+          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+
+          $extract = "$env:INSTALL_ROOT\EMV $ver"
+          Expand-Archive $dest $extract -Force
+
+          Start-Process msiexec.exe "/i `"$extract\EMVExMV.msi`" /qn /norestart" -Wait
+
+      # ------------------------------------------------------------
+      # NDC Enterprise
+      # ------------------------------------------------------------
+      - name: Install NDC Enterprise
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.ndc_enterprise_version }}"
+
+          if ($ver -match '^andc') {
+            $url = "https://ncratleos.jfrog.io/artifactory/ndce-maven-snapshots/com/ncr/ndce/terminal/ndce-sst-aggregate-for-$ver/$ver-SNAPSHOT/ndce-sst-aggregate-for-$ver-SNAPSHOT.zip"
+            $file = "ndce-$ver.zip"
+          } else {
+            $url = "https://ncratleos.jfrog.io/artifactory/atmclient-maven-releases/NDCEnterprise_SST_Runtime/$ver/NDCEnterprise_SST_Runtime-$ver.cab"
+            $file = "ndce-$ver.cab"
+          }
+
+          $dest = "$env:PACKAGE_DIR\$file"
+          curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
+          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+
+          $extract = "$env:INSTALL_ROOT\NDC Enterprise $ver"
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+
+          if ($file -like "*.cab") { expand $dest -F:* $extract }
+          else { Expand-Archive $dest $extract -Force }
+
+          $proc = Start-Process "$extract\setup.exe" "/t:sst /u:silent" -Wait -PassThru
+          if ($env:VALID_EXIT_CODES.Split(',') -notcontains $proc.ExitCode) { exit 1 }
+
+      # ------------------------------------------------------------
+      # Automation Base TARF
+      # ------------------------------------------------------------
+      - name: Install Automation Base TARF
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\TARF\libraries | Out-Null
+          pip install robotframework winregistry beautifulsoup4 lxml robotframework-requests
+
+      # ------------------------------------------------------------
+      # Automation for NDC Enterprise
+      # ------------------------------------------------------------
+      - name: Install Automation for NDC Enterprise
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.automation_ndc_enterprise_version }}"
+          $pkg = "NDCAutomation${ver}Release.nupkg"
+          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$pkg"
+          $dest = "$env:PACKAGE_DIR\$pkg"
+
+          curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
+          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+
+          $extract = "$env:INSTALL_ROOT\ANDCAutomation $ver"
+          Expand-Archive $dest $extract -Force
+
+          Start-Process msiexec.exe "/i `"$extract\ANDCAutomation.msi`" /qn" -Wait
+
+      - name: Stack Installation Complete
+        run: echo "✅ NDCe stack installation completed successfully"
