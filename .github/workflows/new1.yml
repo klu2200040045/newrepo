@@ -1,132 +1,63 @@
-name: NDCe Windows Automation Setup
+name: NDCe Windows Automation Setup (GitHub Hosted)
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
   workflow_dispatch:
     inputs:
-      runner_type:
-        description: 'Runner type to use for deployment'
-        required: true
-        type: choice
-        default: 'self-hosted'
-        options:
-          - 'self-hosted'
-          - 'github-hosted'
       xfs_simulator_version:
-        description: 'XFS Simulator version'
-        required: false
-        type: string
+        required: true
         default: '4.7.0'
       aptra_advance_ndc_version:
-        description: 'APTRA Advance NDC version'
-        required: false
-        type: string
+        required: true
         default: '5.2.0'
-      aptra_advance_ndc_patch_branch:
-        description: 'APTRA Advance NDC Patch Branch (leave empty for no patches)'
-        required: false
-        type: string
-        default: ''
       emv_version:
-        description: 'EMV version'
-        required: false
-        type: string
+        required: true
         default: '5.0.0'
       ndc_enterprise_version:
-        description: 'NDC Enterprise version'
-        required: false
-        type: string
+        required: true
         default: 'andc52x-2.10.0-M01'
       automation_base_tarf_version:
-        description: 'Automation Base TARF version'
-        required: false
-        type: string
+        required: true
         default: '1.1.6'
-      connections_server_url:
-        description: 'Connections Server URL'
-        required: false
-        type: string
-        default: 'http://153.81.244.117:8092/connections'
-      project_type:
-        description: 'Project Type (Reference/Faststart)'
-        required: false
-        type: choice
-        default: 'Reference'
-        options:
-          - 'Reference'
-          - 'Faststart'
       automation_ndc_enterprise_version:
-        description: 'Automation for NDC Enterprise version'
-        required: false
-        type: string
+        required: true
         default: '01.09.00Pre'
-      test_suite:
-        description: 'Test suite path to execute'
-        required: false
-        type: string
-        default: 'BuilderTestSuite/Functional/ClientEditorPortal/clientEditorandPortal.robot'
-      skip_tests:
-        description: 'Skip automation tests (deploy only)'
-        required: false
-        type: boolean
-        default: false
 
 env:
-  XFS_SIMULATOR_VERSION: ${{ github.event.inputs.xfs_simulator_version || '4.7.0' }}
-  APTRA_ADVANCE_NDC_VERSION: ${{ github.event.inputs.aptra_advance_ndc_version || '5.2.0' }}
-  APTRA_ADVANCE_NDC_PATCH_BRANCH: ${{ github.event.inputs.aptra_advance_ndc_patch_branch || '' }}
-  EMV_VERSION: ${{ github.event.inputs.emv_version || '5.0.0' }}
-  NDC_ENTERPRISE_VERSION: ${{ github.event.inputs.ndc_enterprise_version || 'andc52x-2.10.0-M01' }}
-  AUTOMATION_BASE_TARF_VERSION: ${{ github.event.inputs.automation_base_tarf_version || '1.1.6' }}
-  CONNECTIONS_SERVER_URL: ${{ github.event.inputs.connections_server_url || 'http://153.81.244.117:8092/connections' }}
-  PROJECT_TYPE: ${{ github.event.inputs.project_type || 'Reference' }}
-  AUTOMATION_NDC_ENTERPRISE_VERSION: ${{ github.event.inputs.automation_ndc_enterprise_version || '01.09.00Pre' }}
-  TEST_SUITE: ${{ github.event.inputs.test_suite || 'BuilderTestSuite/Functional/ClientEditorPortal/clientEditorandPortal.robot' }}
-  BROWSER: 'chromium'
+  XFS_SIMULATOR_VERSION: ${{ inputs.xfs_simulator_version }}
+  APTRA_ADVANCE_NDC_VERSION: ${{ inputs.aptra_advance_ndc_version }}
+  EMV_VERSION: ${{ inputs.emv_version }}
+  NDC_ENTERPRISE_VERSION: ${{ inputs.ndc_enterprise_version }}
+  AUTOMATION_BASE_TARF_VERSION: ${{ inputs.automation_base_tarf_version }}
+  AUTOMATION_NDC_ENTERPRISE_VERSION: ${{ inputs.automation_ndc_enterprise_version }}
 
 jobs:
-  setup-and-test:
-    name: NDCe Stack Deploy & Run Automation Tests
-    # 'self-hosted' = self-hosted Windows runner with interactive desktop (full compatibility)
-    # 'github-hosted' = GitHub-hosted windows-latest runner (deployment only, no GUI tests)
-    runs-on: ${{ github.event.inputs.runner_type == 'github-hosted' && 'windows-latest' || fromJSON('["self-hosted", "windows"]') }}
+  setup-and-install:
+    name: NDCe Stack Installation (GitHub Hosted)
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout ndce-automation-tests
-        uses: actions/checkout@v4
-        
       - name: Print deployment configuration
         shell: pwsh
         run: |
           Write-Host "========================================="
           Write-Host "  NDCe Stack Deployment Configuration"
           Write-Host "========================================="
-          Write-Host "Runner OS              : $env:OS - $((Get-CimInstance Win32_OperatingSystem).Caption)"
-          Write-Host "XFS Simulator          : $env:XFS_SIMULATOR_VERSION"
-          Write-Host "APTRA Advance NDC      : $env:APTRA_ADVANCE_NDC_VERSION"
-          Write-Host "APTRA NDC Patch Branch : $env:APTRA_ADVANCE_NDC_PATCH_BRANCH"
-          Write-Host "EMV Version            : $env:EMV_VERSION"
-          Write-Host "NDC Enterprise         : $env:NDC_ENTERPRISE_VERSION"
-          Write-Host "Automation Base TARF   : $env:AUTOMATION_BASE_TARF_VERSION"
-          Write-Host "Connections Server URL  : $env:CONNECTIONS_SERVER_URL"
-          Write-Host "Project Type           : $env:PROJECT_TYPE"
-          Write-Host "Automation NDCe Version: $env:AUTOMATION_NDC_ENTERPRISE_VERSION"
+          Write-Host "Runner OS         : $((Get-CimInstance Win32_OperatingSystem).Caption)"
+          Write-Host "XFS Simulator     : $env:XFS_SIMULATOR_VERSION"
+          Write-Host "Advance NDC       : $env:APTRA_ADVANCE_NDC_VERSION"
+          Write-Host "EMV Version       : $env:EMV_VERSION"
+          Write-Host "NDC Enterprise    : $env:NDC_ENTERPRISE_VERSION"
           Write-Host "========================================="
 
       # -----------------------------------------------------------
-      # 0. Install Prerequisites (Chocolatey, 7zip, NuGet, VC++)
+      # 0. Prerequisites
       # -----------------------------------------------------------
       - name: Install prerequisites
         shell: pwsh
         run: |
-          Write-Host "=== Installing prerequisites ==="
           choco install 7zip -y --no-progress
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
-          Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
-
-      # -----------------------------------------------------------
+       # -----------------------------------------------------------
       # 1. Install NDCe Stack Components
       # -----------------------------------------------------------
 
@@ -134,86 +65,66 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
-
           $basePath = "$env:RUNNER_TEMP\ndce-install"
           $pkgDir   = "$basePath\Packages"
           $nupkg    = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
           $pkgPath = "$pkgDir\$nupkg"
           $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkg"
-
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-
           curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $pkgPath $url
           if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Download failed"; exit 1 }
-
           $fileSize = (Get-Item $pkgPath).Length
           Write-Host "Downloaded file size: $fileSize bytes"
           if ($fileSize -lt 1024) {
             Write-Host "ERROR: File too small"; Get-Content $pkgPath; exit 1
           }
-
           Write-Host "=== Extracting XFS Simulator ==="
           $extractPath = "$basePath\XFS Simulator"
           New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
           Expand-Archive -Path $pkgPath -DestinationPath $extractPath -Force
-
           Write-Host "=== Installing XFS Simulator ==="
           $proc = Start-Process -FilePath "$extractPath\setup.exe" -ArgumentList "/t:devsim /u:silent" -Wait -PassThru
-
           $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
           if ($proc.ExitCode -notin $validCodes) {
             Write-Host "ERROR: XFS Simulator install failed ($($proc.ExitCode))"
             exit 1
           }
-
           Write-Host "XFS Simulator installed successfully"
-
       - name: Install APTRA Advance NDC - Download and Extract
         shell: pwsh
         run: |
           Write-Host "=== Downloading APTRA Advance NDC $env:APTRA_ADVANCE_NDC_VERSION ==="
-
           $basePath = "$env:RUNNER_TEMP\ndce-install"
           $pkgDir   = "$basePath\Packages"
           $nupkg    = "AdvanceNDC.$env:APTRA_ADVANCE_NDC_VERSION.nupkg"
           $pkgPath = "$pkgDir\$nupkg"
           $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkg"
-
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-
           curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $pkgPath $url
           if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Download failed"; exit 1 }
-
           $fileSize = (Get-Item $pkgPath).Length
           if ($fileSize -lt 1024) {
             Write-Host "ERROR: File too small"; Get-Content $pkgPath; exit 1
           }
-
           Write-Host "=== Extracting Advance NDC ==="
           $extractPath = "$basePath\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
           New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
           Expand-Archive -Path $pkgPath -DestinationPath $extractPath -Force
-
           Write-Host "Setup.exe exists: $(Test-Path "$extractPath\setup.exe")"
-
       - name: Install APTRA Advance NDC - Run Installer
         shell: pwsh
         run: |
           $extractPath = "$env:RUNNER_TEMP\ndce-install\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
           $setupExe = Join-Path $extractPath "setup.exe"
-
           if (-not (Test-Path $setupExe)) {
             Write-Host "ERROR: setup.exe not found"; exit 1
           }
-
           Write-Host "=== Installing Advance NDC ==="
           & $setupExe /t:sst /u:silent
           $exitCode = $LASTEXITCODE
-
           $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
           if ($exitCode -notin $validCodes) {
             Write-Host "ERROR: Advance NDC install failed ($exitCode)"
             exit 1
           }
-
           Write-Host "Advance NDC installed successfully"
