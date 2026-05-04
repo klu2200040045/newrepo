@@ -40,9 +40,6 @@ jobs:
           Write-Host "EMV Version            : $env:EMV_VERSION"
           Write-Host "NDC Enterprise         : $env:NDC_ENTERPRISE_VERSION"
           Write-Host "Automation Base TARF   : $env:AUTOMATION_BASE_TARF_VERSION"
-          Write-Host "Connections Server URL  : $env:CONNECTIONS_SERVER_URL"
-          Write-Host "Project Type           : $env:PROJECT_TYPE"
-          Write-Host "Automation NDCe Version: $env:AUTOMATION_NDC_ENTERPRISE_VERSION"
           Write-Host "========================================="
  
       # -----------------------------------------------------------
@@ -113,101 +110,127 @@ jobs:
           Write-Host "Setup.exe exists: $(Test-Path "$extractPath\setup.exe")"
           Write-Host "Extract path: $extractPath"
       
-      - name: Setup and install the APTRA Advance NDC aggregate
+      
+      - name: Install APTRA Advance NDC - Run Installer
         shell: pwsh
         run: |
-          $basePath    = "$env:RUNNER_TEMP\ndce-install"
-          $extractPath = "$basePath\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
-          $setupExe    = Join-Path $extractPath "setup.exe"
-      
-          if (-not (Test-Path $setupExe)) {
-            Write-Error "setup.exe not found at expected location: $setupExe"
-            exit 1
-          }
-      
-          Write-Host "Starting APTRA Advance NDC aggregate installation"
-          Write-Host "Command: setup.exe /t:sst /u:silent"
-      
-          # Allow system to stabilize before invoking installer
-          Start-Sleep -Seconds 15
-      
-          & $setupExe /t:sst /u:silent
-      
-          Write-Host "APTRA Advance NDC aggregate installation invoked"
-
-      - name: Validate APTRA Advance NDC aggregate execution
-        shell: pwsh
-        run: |
-          Write-Host "Validating Aggregate Installer execution status"
-      
-          Start-Sleep -Seconds 10
-      
-          $aggSuccess = Get-WinEvent -FilterHashtable @{
-            LogName      = 'Application'
-            ProviderName = 'Aggregate Installer'
-            StartTime    = (Get-Date).AddMinutes(-10)
-          } | Where-Object {
-            $_.Message -match 'Success entry' -and
-            $_.Message -match 'APTRA Advance NDC'
-          }
-      
-          if (-not $aggSuccess) {
-            Write-Error "Aggregate Installer did not report successful execution for APTRA Advance NDC"
-            exit 1
-          }
-      
-          Write-Host "Aggregate Installer reported successful execution for APTRA Advance NDC"
-
-      - name: Verify APTRA Advance NDC installation artefacts
-        shell: pwsh
-        run: |
-          Write-Host "Verifying APTRA Advance NDC installation artefacts"
-      
-          $installRoot = "C:\Program Files (x86)\NCR APTRA\Advance NDC"
-          $expectedDirs = @("Bin", "Config", "Logs", "Terminal")
-      
-          if (Test-Path $installRoot) {
-            Write-Host "Install root directory present: $installRoot"
-          } else {
-            Write-Host "Install root directory not present at this stage"
-          }
-      
-          $missingDirs = @()
-          foreach ($dir in $expectedDirs) {
-            $path = Join-Path $installRoot $dir
-            if (Test-Path $path) {
-              Write-Host "Directory present: $dir"
-            } else {
-              Write-Host "Directory not present: $dir"
-              $missingDirs += $dir
+            $basePath    = "$env:RUNNER_TEMP\ndce-install"
+            $extractPath = "$basePath\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
+            $setupExe    = Join-Path $extractPath "setup.exe"
+        
+            if (-not (Test-Path $setupExe)) {
+              Write-Error "setup.exe not found at expected path: $setupExe"
+              exit 1
             }
-          }
-      
-          if ($missingDirs.Count -eq 0) {
-            Write-Host "All expected APTRA Advance NDC directories are present"
-            echo "INSTALL_STATE=FINALIZED" >> $env:GITHUB_ENV
-          } else {
-            Write-Host "One or more APTRA Advance NDC directories are not present"
-            echo "INSTALL_STATE=PENDING_REBOOT" >> $env:GITHUB_ENV
-          }
+        
+            Write-Host "=== Pre-installation diagnostics ==="
+            Write-Host "OS: $((Get-CimInstance Win32_OperatingSystem).Caption)"
+            Write-Host "Free disk: $([math]::Round((Get-PSDrive C).Free / 1GB, 2)) GB"
+            Write-Host "Running as: $env:USERNAME"
+            Write-Host "Is Admin: $([Security.Principal.WindowsPrincipal]::new(
+              [Security.Principal.WindowsIdentity]::GetCurrent()
+            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
+        
+            Write-Host ""
+            Write-Host "=== Installed NCR/APTRA components ==="
+            Get-CimInstance Win32_Product |
+              Where-Object { $_.Name -match 'NCR|APTRA|XFS' } |
+              Select-Object Name, Version |
+              Format-Table -AutoSize
+        
+            Write-Host ""
+            Write-Host "=== Pending reboot check ==="
+            $pendingRebootBefore = (
+              Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+            ) -or (
+              Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+            )
+            Write-Host "Pending reboot before install: $pendingRebootBefore"
+        
+            Write-Host ""
+            Write-Host "Waiting for system stability..."
+            Start-Sleep -Seconds 15
+        
+            Write-Host ""
+            Write-Host "=== Installing Advance NDC ==="
+            Write-Host "Command: setup.exe /t:sst /u:silent"
+            Write-Host "Start time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        
+            & $setupExe /t:sst /u:silent
+        
+            Write-Host "End time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+            Write-Host "NOTE: Advance NDC uses Aggregate Installer; exit code is not reliable."
+        
+            Write-Host ""
+            Write-Host "Validating installation via Aggregate Installer event logs..."
+            Start-Sleep -Seconds 10
+        
+            $aggSuccess = Get-WinEvent -FilterHashtable @{
+              LogName      = 'Application'
+              ProviderName = 'Aggregate Installer'
+              StartTime    = (Get-Date).AddMinutes(-10)
+            } | Where-Object {
+              $_.Message -match 'Success entry' -and
+              $_.Message -match 'APTRA Advance NDC'
+            }
+        
+            if (-not $aggSuccess) {
+              Write-Error "Aggregate Installer did not report successful execution for APTRA Advance NDC"
+              exit 1
+            }
+        
+            Write-Host "Aggregate Installer reported SUCCESS for Advance NDC"
+        
+            Write-Host ""
+            Write-Host "Checking for pending reboot after installation..."
+            $pendingRebootAfter = (
+              Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+            ) -or (
+              Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+            )
+            Write-Host "Pending reboot after install: $pendingRebootAfter"
+        
+            Write-Host ""
+            Write-Host "Verifying installation artefacts under Program Files"
+        
+            $installRoot = "C:\Program Files (x86)\NCR APTRA\Advance NDC"
+            $expectedDirs = @("Bin", "Config", "Logs", "Terminal")
+            $missingDirs  = @()
+        
+            if (-not (Test-Path $installRoot)) {
+              Write-Host "Install root directory not present"
+              $missingDirs += "InstallRoot"
+            } else {
+              Write-Host "Install root directory present"
+            }
+        
+            foreach ($dir in $expectedDirs) {
+              $path = Join-Path $installRoot $dir
+              if (Test-Path $path) {
+                Write-Host "Directory present: $dir"
+              } else {
+                Write-Host "Directory not present: $dir"
+                $missingDirs += $dir
+              }
+            }
+        
+            if ($missingDirs.Count -gt 0) {
+              Write-Host ""
+              Write-Host "One or more installation components are not materialized"
+              Write-Host "Installation requires system reboot to finalize deferred components"
+        
+              Write-Host ""
+              Write-Host "Attempting reboot assessment"
+        
+              if ($env:GITHUB_ACTIONS -eq "true") {
+                Write-Error "System reboot is required to complete APTRA Advance NDC installation"
+                Write-Error "Reboot operation is not supported on GitHub-hosted Windows runners"
+                Write-Error "Further installation verification cannot be performed in this environment"
+                Write-Error  "A persistent, self-hosted Windows runner is required to proceed"
 
-      - name: Assess reboot requirement and execution constraints
-        shell: pwsh
-        run: |
-          Write-Host "Assessing reboot requirement"
+            exit 1
+              }
+              }
       
-          $rebootPending = (
-            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
-          ) -or (
-            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
-          )
-      
-          Write-Host "Pending reboot detected: $rebootPending"
-      
-          if ($env:INSTALL_STATE -eq "PENDING_REBOOT") {
-            Write-Host "APTRA Advance NDC installation requires system reboot for completion"
-            Write-Host "Reboot operation is not supported on GitHub-hosted runners"
-            Write-Host "Further validation must be performed on a persistent self-hosted Windows runner"
-          } else {
-            Write-Host "APTRA Advance NDC installation is complete without reboot requirement"
-          }
+
+          
