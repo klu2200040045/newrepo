@@ -40,6 +40,16 @@ jobs:
           Write-Host "INSTALL_ROOT=$env:INSTALL_ROOT"
           Write-Host "PACKAGE_DIR=$env:PACKAGE_DIR"
           Write-Host "VALID_EXIT_CODES=$env:VALID_EXIT_CODES"
+
+      # ------------------------------------------------------------
+      # Create required directories (IMPORTANT)
+      # ------------------------------------------------------------
+      - name: Create install directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:INSTALL_ROOT | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
+
       # ------------------------------------------------------------
       # XFS Simulator
       # ------------------------------------------------------------
@@ -52,13 +62,19 @@ jobs:
           $dest = "$env:PACKAGE_DIR\$pkg"
 
           curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
-          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+          if (-not (Test-Path $dest)) { Write-Host "Download failed"; exit 1 }
+          if ((Get-Item $dest).Length -lt 1024) { Write-Host "File too small"; exit 1 }
 
           $extract = "$env:INSTALL_ROOT\XFS Simulator"
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
           Expand-Archive $dest $extract -Force
 
           $proc = Start-Process "$extract\setup.exe" "/t:devsim /u:silent" -Wait -PassThru
-          if ($env:VALID_EXIT_CODES.Split(',') -notcontains $proc.ExitCode) { exit 1 }
+          $validCodes = $env:VALID_EXIT_CODES.Split(',') | ForEach-Object { [int]$_ }
+          if ($validCodes -notcontains $proc.ExitCode) {
+            Write-Host "XFS install failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
 
       # ------------------------------------------------------------
       # Advance NDC
@@ -72,13 +88,19 @@ jobs:
           $dest = "$env:PACKAGE_DIR\$pkg"
 
           curl.exe -f -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $dest $url
-          if ((Get-Item $dest).Length -lt 1024) { exit 1 }
+          if (-not (Test-Path $dest)) { Write-Host "Download failed"; exit 1 }
+          if ((Get-Item $dest).Length -lt 1024) { Write-Host "File too small"; exit 1 }
 
           $extract = "$env:INSTALL_ROOT\Advance NDC $ver"
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
           Expand-Archive $dest $extract -Force
 
           $proc = Start-Process "$extract\setup.exe" "/t:sst /u:silent" -Wait -PassThru
-          if ($env:VALID_EXIT_CODES.Split(',') -notcontains $proc.ExitCode) { exit 1 }
+          $validCodes = $env:VALID_EXIT_CODES.Split(',') | ForEach-Object { [int]$_ }
+          if ($validCodes -notcontains $proc.ExitCode) {
+            Write-Host "Advance NDC install failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
 
       # ------------------------------------------------------------
       # EMV
