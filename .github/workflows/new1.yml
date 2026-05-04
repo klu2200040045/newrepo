@@ -1,138 +1,96 @@
-name: NDCe Windows Automation Setup (GitHub Hosted)
-
+name: NDCe Windows Automation Setup
+ 
 on:
+  push:
+    branches: [ main ]
+  pull_request:
   workflow_dispatch:
-    inputs:
-      xfs_simulator_version:
-        required: true
-        default: '4.7.0'
-      aptra_advance_ndc_version:
-        required: true
-        default: '5.2.0'
-      emv_version:
-        required: true
-        default: '5.0.0'
-      ndc_enterprise_version:
-        required: true
-        default: 'andc52x-2.10.0-M01'
-      automation_base_tarf_version:
-        required: true
-        default: '1.1.6'
-      automation_ndc_enterprise_version:
-        required: true
-        default: '01.09.00Pre'
-
+ 
 env:
-  XFS_SIMULATOR_VERSION: ${{ inputs.xfs_simulator_version }}
-  APTRA_ADVANCE_NDC_VERSION: ${{ inputs.aptra_advance_ndc_version }}
-  EMV_VERSION: ${{ inputs.emv_version }}
-  NDC_ENTERPRISE_VERSION: ${{ inputs.ndc_enterprise_version }}
-  AUTOMATION_BASE_TARF_VERSION: ${{ inputs.automation_base_tarf_version }}
-  AUTOMATION_NDC_ENTERPRISE_VERSION: ${{ inputs.automation_ndc_enterprise_version }}
-
+  XFS_SIMULATOR_VERSION: '4.7.0'
+  APTRA_ADVANCE_NDC_VERSION: '5.2.0'
+  APTRA_ADVANCE_NDC_PATCH_BRANCH: ''
+  EMV_VERSION: '5.0.0'
+  NDC_ENTERPRISE_VERSION: 'andc52x-2.10.0-M01'
+  AUTOMATION_BASE_TARF_VERSION: '1.1.6'
+ 
 jobs:
-  setup-and-install:
-    name: NDCe Stack Installation (GitHub Hosted)
+  setup-and-test:
+    name: NDCe Stack Deploy & Run Automation Tests
     runs-on: windows-latest
-
+ 
     steps:
+      - name: Checkout ndce-automation-tests
+        uses: actions/checkout@v4
+        #with:
+        #  repository: ncratleos-swt-banking/ndce-automation-tests
+        #  ref: master
+        #  token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+ 
       - name: Print deployment configuration
         shell: pwsh
         run: |
           Write-Host "========================================="
           Write-Host "  NDCe Stack Deployment Configuration"
           Write-Host "========================================="
-          Write-Host "Runner OS         : $((Get-CimInstance Win32_OperatingSystem).Caption)"
-          Write-Host "XFS Simulator     : $env:XFS_SIMULATOR_VERSION"
-          Write-Host "Advance NDC       : $env:APTRA_ADVANCE_NDC_VERSION"
-          Write-Host "EMV Version       : $env:EMV_VERSION"
-          Write-Host "NDC Enterprise    : $env:NDC_ENTERPRISE_VERSION"
+          Write-Host "Runner OS              : $env:OS - $((Get-CimInstance Win32_OperatingSystem).Caption)"
+          Write-Host "XFS Simulator          : $env:XFS_SIMULATOR_VERSION"
+          Write-Host "APTRA Advance NDC      : $env:APTRA_ADVANCE_NDC_VERSION"
+          Write-Host "APTRA NDC Patch Branch : $env:APTRA_ADVANCE_NDC_PATCH_BRANCH"
+          Write-Host "EMV Version            : $env:EMV_VERSION"
+          Write-Host "NDC Enterprise         : $env:NDC_ENTERPRISE_VERSION"
+          Write-Host "Automation Base TARF   : $env:AUTOMATION_BASE_TARF_VERSION"
+          Write-Host "Connections Server URL  : $env:CONNECTIONS_SERVER_URL"
+          Write-Host "Project Type           : $env:PROJECT_TYPE"
+          Write-Host "Automation NDCe Version: $env:AUTOMATION_NDC_ENTERPRISE_VERSION"
           Write-Host "========================================="
+ 
       # -----------------------------------------------------------
-      # 0. Prerequisites
+      # 0. Install Prerequisites (Chocolatey, 7zip, NuGet, VC++)
       # -----------------------------------------------------------
       - name: Install prerequisites
         shell: pwsh
         run: |
-           Write-Host "===Installing prrequisities ==="
-           choco install 7zip -y --no-progress
-           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
-           Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
-       # -----------------------------------------------------------
-    # 1. Install NDCe Stack Components
-    # -----------------------------------------------------------
+          Write-Host "=== Installing prerequisites ==="
+          choco install 7zip -y --no-progress
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
+          Write-Host "Install base path: $env:RUNNER_TEMP\ndce-install"
+ 
+      
+      # -----------------------------------------------------------
+      # 1. Install NDCe Stack Components
+      # -----------------------------------------------------------
+
       - name: Install XFS Simulator
         shell: pwsh
         run: |
-         Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
-         $nupkgFile = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
-         $downloadPath = "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile"
-         $extractPath  = "$env:RUNNER_TEMP\ndce-install\XFS Simulator"
-         $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkgFile"
-         New-Item -ItemType Directory -Force -Path (Split-Path $downloadPath) | Out-Null
-         # Download
-           curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $downloadPath $url
-           
-           if ($LASTEXITCODE -ne 0) {
-             Write-Host "ERROR: Download failed with exit code $LASTEXITCODE"
-             exit 1
-           }
-           
-           Write-Host "Downloaded package path:"
-           Write-Host $downloadPath
-           
-           $fileSize = (Get-Item $downloadPath).Length
-           Write-Host "Downloaded file size: $fileSize bytes"
-           
-           if ($fileSize -lt 1024) {
-             Write-Host "ERROR: Downloaded file is too small"
-             exit 1
-           }
-           
-           # Extract
-           Write-Host "=== Extracting XFS Simulator nupkg ==="
-           New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
-           Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
-           
-           Write-Host "Top-level extracted contents:"
-           Get-ChildItem $extractPath |
-             Select-Object Name, Length, LastWriteTime |
-             Format-Table -AutoSize
-           
-           # Locate setup.exe
-           $setupExe = Join-Path $extractPath "setup.exe"
-           Write-Host "setup.exe path : $setupExe"
-           Write-Host "Exists        : $(Test-Path $setupExe)"
-           
-           # Install
-           Write-Host "=== Installing XFS Simulator ==="
-           $proc = Start-Process -FilePath $setupExe -ArgumentList "/t:devsim /u:silent" -Wait -PassThru
-           
-           $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
-           if ($proc.ExitCode -notin $validCodes) {
-             Write-Host "ERROR: XFS Simulator install failed with exit code $($proc.ExitCode)"
-             exit 1
-           }
-           
-           Write-Host "XFS Simulator installed successfully (exit code: $($proc.ExitCode))"
-           
-           # Post-install verification
-           Write-Host "=== Locating installed XFS Simulator executable (SIMSTART.exe) ==="
-           $simStart = Get-ChildItem -Path "C:\" -Filter "SIMSTART.exe" -Recurse -ErrorAction SilentlyContinue |
-                       Select-Object -First 1
-           
-           if (-not $simStart) {
-             Write-Host "ERROR: SIMSTART.exe not found after installation"
-             exit 1
-           }
-           
-           Write-Host "SIMSTART.exe found:"
-           Write-Host "Path : $($simStart.FullName)"
-           Write-Host "Size : $([Math]::Round($simStart.Length / 1KB, 2)) KB"
-           
-           $ver = (Get-Item $simStart.FullName).VersionInfo
-           Write-Host "File version : $($ver.FileVersion)"
-           Write-Host "Product ver. : $($ver.ProductVersion)"
+          Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
+          $nupkgFile = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
+          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkgFile"
+          curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile" $url
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Download failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          $fileSize = (Get-Item "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile").Length
+          Write-Host "Downloaded file size: $fileSize bytes"
+          if ($fileSize -lt 1024) {
+            Write-Host "ERROR: Downloaded file is too small ($fileSize bytes) — likely an error response:"
+            Get-Content "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile"
+            exit 1
+          }
+          Write-Host "=== Extracting nupkg ==="
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\XFS Simulator" | Out-Null
+          Expand-Archive -Path "$env:RUNNER_TEMP\ndce-install\Packages\$nupkgFile" -DestinationPath "$env:RUNNER_TEMP\ndce-install\XFS Simulator" -Force
+          Write-Host "=== Installing XFS Simulator (setup.exe /t:devsim /u:silent) ==="
+          $proc = Start-Process -FilePath "$env:RUNNER_TEMP\ndce-install\XFS Simulator\setup.exe" -ArgumentList "/t:devsim /u:silent" -Wait -PassThru
+          $validCodes = @(0, 1073741825, 1073741826, 1073741830, 3010, 1641)
+          if ($proc.ExitCode -notin $validCodes) {
+            Write-Host "ERROR: XFS Simulator install failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
+          Write-Host "XFS Simulator installed (exit code: $($proc.ExitCode))"
+
       - name: Install APTRA Advance NDC - Download and Extract
         shell: pwsh
         run: |
