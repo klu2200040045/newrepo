@@ -48,7 +48,6 @@ jobs:
           Write-Host "EMV Version       : $env:EMV_VERSION"
           Write-Host "NDC Enterprise    : $env:NDC_ENTERPRISE_VERSION"
           Write-Host "========================================="
-
       # -----------------------------------------------------------
       # 0. Prerequisites
       # -----------------------------------------------------------
@@ -92,7 +91,6 @@ jobs:
             exit 1
           }
           Write-Host "XFS Simulator installed (exit code: $($proc.ExitCode))"
-
       - name: Install APTRA Advance NDC - Download and Extract
         shell: pwsh
         run: |
@@ -114,93 +112,119 @@ jobs:
           Get-ChildItem -Path $extractPath -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
           Write-Host "Setup.exe exists: $(Test-Path "$extractPath\setup.exe")"
           Write-Host "Extract path: $extractPath"
-
-      - name: Install APTRA Advance NDC - Run Installer
+      - name: Install APTRA Advance NDC - xAct Final
         shell: pwsh
         run: |
-          $extractPath = "$env:RUNNER_TEMP\ndce-install\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
-          $setupExe = Join-Path $extractPath "setup.exe"
+          $basePath    = "$env:RUNNER_TEMP\ndce-install"
+          $extractPath = "$basePath\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
+          $setupExe    = Join-Path $extractPath "setup.exe"
+
           if (-not (Test-Path $setupExe)) {
-            Write-Host "ERROR: setup.exe not found at $setupExe"; exit 1
+            Write-Host "ERROR: setup.exe not found at $setupExe"
+            exit 1
           }
 
-          # --- Pre-checks ---
+          # ------------------------------------------------------------
+          # 1. Pre-install diagnostics (same intent as xAct)
+          # ------------------------------------------------------------
           Write-Host "=== Pre-installation diagnostics ==="
           Write-Host "OS: $((Get-CimInstance Win32_OperatingSystem).Caption)"
           Write-Host "Free disk: $([math]::Round((Get-PSDrive C).Free / 1GB, 2)) GB"
           Write-Host "Running as: $env:USERNAME"
-          Write-Host "Is Admin: $([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
+          Write-Host "Is Admin: $([Security.Principal.WindowsPrincipal]::new(
+            [Security.Principal.WindowsIdentity]::GetCurrent()
+          ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
 
-          # Check .NET Framework versions
-          Write-Host "=== .NET Framework versions ==="
-          Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -Recurse | 
-            Get-ItemProperty -Name Version, Release -ErrorAction SilentlyContinue |
-            Where-Object { $_.PSChildName -match '^(?!S)\p{L}'} |
-            Select-Object PSChildName, Version, Release | Format-Table -AutoSize
+          Write-Host "=== Installed NCR/APTRA components ==="
+          Get-CimInstance Win32_Product |
+            Where-Object { $_.Name -match 'NCR|APTRA|XFS' } |
+            Select-Object Name, Version |
+            Format-Table -AutoSize
 
-          # Check if XFS Simulator is installed
-          Write-Host "=== Installed products (NCR/APTRA) ==="
-          Get-CimInstance Win32_Product | Where-Object { $_.Name -match 'NCR|APTRA|XFS' } | Select-Object Name, Version | Format-Table -AutoSize
-
-          # Check for pending reboot (XFS installer may require one)
           Write-Host "=== Pending reboot check ==="
-          $pendingReboot = (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending") -or
-                           (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired")
-          Write-Host "Pending reboot: $pendingReboot"
+          $pendingReboot = (
+            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+          ) -or (
+            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+          )
+          Write-Host "Pending reboot before install: $pendingReboot"
 
-          # Enable global MSI verbose logging
-          Write-Host "=== Enabling MSI verbose logging ==="
-          New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
-          Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name "Logging" -Value "voicewarmupx" -Type String
-          Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name "Debug" -Value 7 -Type DWord
+          # ------------------------------------------------------------
+          # 2. xAct wait_for_connection equivalent
+          # ------------------------------------------------------------
+          Write-Host "Waiting for system stability..."
+          Start-Sleep -Seconds 15
 
-          # List contents of extract path for verification
-          Write-Host "=== Extract directory contents (top-level) ==="
-          Get-ChildItem -Path $extractPath | Format-Table Name, Length -AutoSize
-
+          # ------------------------------------------------------------
+          # 3. Launch Advance NDC Aggregate Installer
+          # ------------------------------------------------------------
           Write-Host "=== Installing Advance NDC ==="
           Write-Host "Command: $setupExe /t:sst /u:silent"
           Write-Host "Start time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 
           & $setupExe /t:sst /u:silent
-          $exitCode = $LASTEXITCODE
 
           Write-Host "End time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-          Write-Host "Exit code: $exitCode"
+          Write-Host "NOTE: Advance NDC uses Aggregate Installer; exit code is not reliable."
 
-          # --- Post-install diagnostics ---
-          # Check MSI logs in TEMP
-          Write-Host "=== MSI logs in TEMP ==="
-          $msiLogs = Get-ChildItem -Path $env:TEMP -Filter "MSI*.LOG" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 5
-          if ($msiLogs) {
-            foreach ($log in $msiLogs) {
-              Write-Host "--- $($log.Name) ($($log.Length) bytes, $($log.LastWriteTime)) ---"
-              Get-Content $log.FullName -Tail 150
-            }
-          } else {
-            Write-Host "No MSI logs found in $env:TEMP"
+          # ------------------------------------------------------------
+          # 4. xAct SUCCESS CRITERIA (Event Log based)
+          # ------------------------------------------------------------
+          Write-Host "Validating installation via Aggregate Installer event logs..."
+
+          Start-Sleep -Seconds 10  # allow event log flush
+
+          $aggSuccess = Get-WinEvent -FilterHashtable @{
+            LogName      = 'Application'
+            ProviderName = 'Aggregate Installer'
+            StartTime    = (Get-Date).AddMinutes(-5)
+          } | Where-Object {
+            $_.Message -match 'Success entry' -and
+            $_.Message -match 'APTRA Advance NDC'
           }
 
-          # Check any log files created in the extract path
-          Write-Host "=== Log files in extract path ==="
-          Get-ChildItem -Path $extractPath -Filter "*.log" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Host "--- $($_.FullName) ---"
-            Get-Content $_.FullName -Tail 100
-          }
+          if (-not $aggSuccess) {
+            Write-Host "ERROR: No SUCCESS entry from Aggregate Installer for Advance NDC"
 
-          # Check Windows Event Log
-          Write-Host "=== Recent Application events (last 10 min) ==="
-          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-10)} -MaxEvents 20 -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Message -match 'NCR|APTRA|setup|install|msi|error' } |
-            Format-List TimeCreated, ProviderName, Message
+            Write-Host "=== Aggregate Installer events (last 10 min) ==="
+            Get-WinEvent -FilterHashtable @{
+              LogName      = 'Application'
+              ProviderName = 'Aggregate Installer'
+              StartTime    = (Get-Date).AddMinutes(-10)
+            } | Format-List TimeCreated, ProviderName, Message
 
-          # Check Setup event log
-          Write-Host "=== Recent Setup events ==="
-          Get-WinEvent -LogName 'Setup' -MaxEvents 10 -ErrorAction SilentlyContinue | Format-List TimeCreated, Message
-
-          $validCodes = @(0, 1073741825, 1073741826, 1073741830, 3010, 1641)
-          if ($exitCode -notin $validCodes) {
-            Write-Host "ERROR: Advance NDC install failed with exit code $exitCode"
             exit 1
           }
-          Write-Host "Advance NDC installed successfully"
+
+          Write-Host "Aggregate Installer reported SUCCESS for Advance NDC"
+
+          # ------------------------------------------------------------
+          # 5. Optional filesystem confirmation (xAct-style)
+          # ------------------------------------------------------------
+          $installPath = "C:\Program Files (x86)\NCR APTRA\Advance NDC"
+          if (Test-Path $installPath) {
+            Write-Host "Advance NDC install directory exists: $installPath"
+          } else {
+            Write-Host "WARNING: Install directory not found yet (may appear after reboot)"
+          }
+
+          # ------------------------------------------------------------
+          # 6. Post-install reboot detection (xAct win_reboot equivalent)
+          # ------------------------------------------------------------
+          Write-Host "Checking for pending reboot after installation..."
+          $rebootAfter = (
+            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+          ) -or (
+            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+          )
+
+          Write-Host "Pending reboot after install: $rebootAfter"
+
+          if ($rebootAfter) {
+            echo "REBOOT_REQUIRED=true" >> $env:GITHUB_ENV
+            Write-Host "Reboot required (xAct semantics)"
+          } else {
+            echo "REBOOT_REQUIRED=false" >> $env:GITHUB_ENV
+          }
+
+          Write-Host "Advance NDC installation completed successfully (xAct semantics)"
