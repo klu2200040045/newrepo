@@ -111,20 +111,60 @@ jobs:
           New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
           Expand-Archive -Path $pkgPath -DestinationPath $extractPath -Force
           Write-Host "Setup.exe exists: $(Test-Path "$extractPath\setup.exe")"
-      - name: Install APTRA Advance NDC - Run Installer
+      - name: Install APTRA Advance NDC - xAct Equivalent
         shell: pwsh
         run: |
-          $extractPath = "$env:RUNNER_TEMP\ndce-install\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
-          $setupExe = Join-Path $extractPath "setup.exe"
-          if (-not (Test-Path $setupExe)) {
-            Write-Host "ERROR: setup.exe not found"; exit 1
-          }
-          Write-Host "=== Installing Advance NDC ==="
-          & $setupExe /t:sst /u:silent
-          $exitCode = $LASTEXITCODE
-          $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
-          if ($exitCode -notin $validCodes) {
-            Write-Host "ERROR: Advance NDC install failed ($exitCode)"
-            exit 1
-          }
-          Write-Host "Advance NDC installed successfully"
+           $basePath    = "$env:RUNNER_TEMP\ndce-install"
+           $extractPath = "$basePath\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
+           $setupExe    = Join-Path $extractPath "setup.exe"
+
+           if (-not (Test-Path $setupExe)) {
+             Write-Host "ERROR: setup.exe not found at $setupExe"
+             exit 1
+           }
+
+           # ------------------------------------------------------------
+           # 1. Pre-install stability wait (xAct wait_for_connection)
+           # ------------------------------------------------------------
+           Write-Host "Waiting for system stability before install..."
+           Start-Sleep -Seconds 15
+
+           # ------------------------------------------------------------
+           # 2. Run installer
+           # ------------------------------------------------------------
+           Write-Host "=== Installing Advance NDC ==="
+           Write-Host "Command: $setupExe /t:sst /u:silent"
+           Write-Host "Start time: $(Get-Date)"
+
+           & $setupExe /t:sst /u:silent
+           $exitCode = $LASTEXITCODE
+
+           Write-Host "Exit code: $exitCode"
+           Write-Host "End time: $(Get-Date)"
+
+           $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
+           if ($exitCode -notin $validCodes) {
+             Write-Host "ERROR: Advance NDC install failed"
+             exit 1
+           }
+
+           # ------------------------------------------------------------
+           # 3. Check for pending reboot (xAct logic)
+           # ------------------------------------------------------------
+           Write-Host "Checking for pending reboot..."
+           $rebootPending = (
+             Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+           ) -or (
+             Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+           )
+       
+           Write-Host "Reboot pending: $rebootPending"
+       
+           # Signal reboot requirement to next step
+           if ($exitCode -in @(3010,1641) -or $rebootPending) {
+             echo "REBOOT_REQUIRED=true" >> $env:GITHUB_ENV
+           } else {
+             echo "REBOOT_REQUIRED=false" >> $env:GITHUB_ENV
+           }
+       
+           Write-Host "Advance NDC installation phase completed"
