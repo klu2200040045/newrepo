@@ -58,38 +58,69 @@ jobs:
           choco install 7zip -y --no-progress
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
        # -----------------------------------------------------------
+      name: NDCe Windows Automation Setup (GitHub Hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      xfs_simulator_version:
+        required: true
+        default: '4.7.0'
+      aptra_advance_ndc_version:
+        required: true
+        default: '5.2.0'
+      emv_version:
+        required: true
+        default: '5.0.0'
+      ndc_enterprise_version:
+        required: true
+        default: 'andc52x-2.10.0-M01'
+      automation_base_tarf_version:
+        required: true
+        default: '1.1.6'
+      automation_ndc_enterprise_version:
+        required: true
+        default: '01.09.00Pre'
+
+env:
+  XFS_SIMULATOR_VERSION: ${{ inputs.xfs_simulator_version }}
+  APTRA_ADVANCE_NDC_VERSION: ${{ inputs.aptra_advance_ndc_version }}
+  EMV_VERSION: ${{ inputs.emv_version }}
+  NDC_ENTERPRISE_VERSION: ${{ inputs.ndc_enterprise_version }}
+  AUTOMATION_BASE_TARF_VERSION: ${{ inputs.automation_base_tarf_version }}
+  AUTOMATION_NDC_ENTERPRISE_VERSION: ${{ inputs.automation_ndc_enterprise_version }}
+
+jobs:
+  setup-and-install:
+    name: NDCe Stack Installation (GitHub Hosted)
+    runs-on: windows-latest
+
+    steps:
+      - name: Print deployment configuration
+        shell: pwsh
+        run: |
+          Write-Host "========================================="
+          Write-Host "  NDCe Stack Deployment Configuration"
+          Write-Host "========================================="
+          Write-Host "Runner OS         : $((Get-CimInstance Win32_OperatingSystem).Caption)"
+          Write-Host "XFS Simulator     : $env:XFS_SIMULATOR_VERSION"
+          Write-Host "Advance NDC       : $env:APTRA_ADVANCE_NDC_VERSION"
+          Write-Host "EMV Version       : $env:EMV_VERSION"
+          Write-Host "NDC Enterprise    : $env:NDC_ENTERPRISE_VERSION"
+          Write-Host "========================================="
+      # -----------------------------------------------------------
+      # 0. Prerequisites
+      # -----------------------------------------------------------
+      - name: Install prerequisites
+        shell: pwsh
+        run: |
+          choco install 7zip -y --no-progress
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\ndce-install\Packages" | Out-Null
+       # -----------------------------------------------------------
       # 1. Install NDCe Stack Components
       # -----------------------------------------------------------
 
-      - name: Install XFS Simulator
-        shell: pwsh
-        run: |
-          Write-Host "=== Downloading XFS Simulator $env:XFS_SIMULATOR_VERSION ==="
-          $basePath = "$env:RUNNER_TEMP\ndce-install"
-          $pkgDir   = "$basePath\Packages"
-          $nupkg    = "XFSSimulator.$env:XFS_SIMULATOR_VERSION.nupkg"
-          $pkgPath = "$pkgDir\$nupkg"
-          $url = "https://ncratleos.jfrog.io/artifactory/atmclient-nuget-releases/$nupkg"
-          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-          curl.exe --fail -L -u "${{ secrets.JFROG_USER }}:${{ secrets.JFROG_TOKEN }}" -o $pkgPath $url
-          if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Download failed"; exit 1 }
-          $fileSize = (Get-Item $pkgPath).Length
-          Write-Host "Downloaded file size: $fileSize bytes"
-          if ($fileSize -lt 1024) {
-            Write-Host "ERROR: File too small"; Get-Content $pkgPath; exit 1
-          }
-          Write-Host "=== Extracting XFS Simulator ==="
-          $extractPath = "$basePath\XFS Simulator"
-          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
-          Expand-Archive -Path $pkgPath -DestinationPath $extractPath -Force
-          Write-Host "=== Installing XFS Simulator ==="
-          $proc = Start-Process -FilePath "$extractPath\setup.exe" -ArgumentList "/t:devsim /u:silent" -Wait -PassThru
-          $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
-          if ($proc.ExitCode -notin $validCodes) {
-            Write-Host "ERROR: XFS Simulator install failed ($($proc.ExitCode))"
-            exit 1
-          }
-          Write-Host "XFS Simulator installed successfully"
+      
       - name: Install APTRA Advance NDC - Download and Extract
         shell: pwsh
         run: |
@@ -111,42 +142,82 @@ jobs:
           New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
           Expand-Archive -Path $pkgPath -DestinationPath $extractPath -Force
           Write-Host "Setup.exe exists: $(Test-Path "$extractPath\setup.exe")"
-      - name: Install APTRA Advance NDC - xAct Corrected
+      - name: Install APTRA Advance NDC - xAct Observable
         shell: pwsh
         run: |
           $basePath    = "$env:RUNNER_TEMP\ndce-install"
           $extractPath = "$basePath\Advance NDC $env:APTRA_ADVANCE_NDC_VERSION"
           $setupExe    = Join-Path $extractPath "setup.exe"
-      
+
           if (-not (Test-Path $setupExe)) {
             Write-Host "ERROR: setup.exe not found at $setupExe"
             exit 1
           }
-      
-          # xAct-style stability wait
-          Write-Host "Waiting for system stability before install..."
+
+          # ------------------------------------------------------------
+          # Pre-install stability (same as wait_for_connection)
+          # ------------------------------------------------------------
+          Write-Host "[$(Get-Date)] Waiting for system stability..."
           Start-Sleep -Seconds 15
-      
-          Write-Host "=== Installing Advance NDC ==="
-          Write-Host "Command: $setupExe /t:sst /u:silent"
-          Write-Host "Start time: $(Get-Date)"
-      
-          # ✅ CORRECT way (wait + capture exit code)
+
+          # ------------------------------------------------------------
+          # Diagnostics BEFORE install
+          # ------------------------------------------------------------
+          Write-Host "=== Pre-install system state ==="
+          Get-Process msiexec -ErrorAction SilentlyContinue | Format-Table Id,CPU,StartTime
+          Write-Host "Disk free (C:): $([math]::Round((Get-PSDrive C).Free / 1GB, 2)) GB"
+
+          # ------------------------------------------------------------
+          # Start installer
+          # ------------------------------------------------------------
+          Write-Host "[$(Get-Date)] Starting Advance NDC installer..."
           $proc = Start-Process `
             -FilePath $setupExe `
             -ArgumentList "/t:sst /u:silent" `
             -Wait `
             -PassThru
-      
+
           $exitCode = $proc.ExitCode
-      
-          Write-Host "End time: $(Get-Date)"
-          Write-Host "Exit code: $exitCode"
-      
+          Write-Host "[$(Get-Date)] Installer completed with exit code: $exitCode"
+
+          # ------------------------------------------------------------
+          # Post-install diagnostics
+          # ------------------------------------------------------------
+          Write-Host "=== Post-install MSI activity ==="
+          Get-Process msiexec -ErrorAction SilentlyContinue | Format-Table Id,CPU,StartTime
+
+          Write-Host "=== Pending reboot check ==="
+          $rebootPending = (
+            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+          ) -or (
+            Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+          )
+          Write-Host "Reboot pending: $rebootPending"
+
+          # ------------------------------------------------------------
+          # Validate exit codes (xAct equivalent)
+          # ------------------------------------------------------------
           $validCodes = @(0,1073741825,1073741826,1073741830,3010,1641)
           if ($exitCode -notin $validCodes) {
             Write-Host "ERROR: Advance NDC install failed ($exitCode)"
+
+            Write-Host "=== Recent Application Event Log ==="
+            Get-WinEvent -FilterHashtable @{
+              LogName='Application'
+              StartTime=(Get-Date).AddMinutes(-15)
+            } | Select TimeCreated,Message -First 10
+
             exit 1
           }
 
-          Write-Host "Advance NDC installed successfully"
+          # ------------------------------------------------------------
+          # Signal reboot (like win_reboot)
+          # ------------------------------------------------------------
+          if ($exitCode -in @(3010,1641) -or $rebootPending) {
+            Write-Host "Reboot required after installation"
+            echo "REBOOT_REQUIRED=true" >> $env:GITHUB_ENV
+          } else {
+            echo "REBOOT_REQUIRED=false" >> $env:GITHUB_ENV
+          }
+
+          Write-Host "Advance NDC installation completed successfully"
