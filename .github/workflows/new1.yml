@@ -22,23 +22,24 @@ on:
         required: true
         default: '01.09.00Pre'
 
-env:
-  INSTALL_ROOT: ${{ runner.temp }}\ndce-install
-  PACKAGE_DIR: ${{ runner.temp }}\ndce-install\Packages
-  VALID_EXIT_CODES: '0,1073741825,1073741826,1073741830,3010,1641'
-
 jobs:
   stack-install:
     runs-on: windows-latest
 
     steps:
-      - name: Initialize directories
+      - name: Set runtime variables
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path $env:INSTALL_ROOT | Out-Null
-          New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
-          Write-Host "Install root: $env:INSTALL_ROOT"
+          echo "INSTALL_ROOT=$env:RUNNER_TEMP\ndce-install" >> $env:GITHUB_ENV
+          echo "PACKAGE_DIR=$env:RUNNER_TEMP\ndce-install\Packages" >> $env:GITHUB_ENV
+          echo "VALID_EXIT_CODES=0,1073741825,1073741826,1073741830,3010,1641" >> $env:GITHUB_ENV
 
+      - name: Verify variables
+        shell: pwsh
+        run: |
+          Write-Host "INSTALL_ROOT=$env:INSTALL_ROOT"
+          Write-Host "PACKAGE_DIR=$env:PACKAGE_DIR"
+          Write-Host "VALID_EXIT_CODES=$env:VALID_EXIT_CODES"
       # ------------------------------------------------------------
       # XFS Simulator
       # ------------------------------------------------------------
